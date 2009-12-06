@@ -493,4 +493,31 @@ describe "SAXMachine" do
       @collection.categories.first.categories.first.title.should == "Second"
     end
   end
+  
+  describe "with element deeper inside the xml structure" do
+    before do
+      @xml = %[
+        <item id="1">
+          <texts>
+            <title>Hello</title>
+          </texts>
+        </item>
+      ]
+      @klass = Class.new do
+        include SAXMachine
+        attr_accessor :id
+        element :item, :value => "id", :as => :id
+        element :title
+      end
+      @item = @klass.parse(@xml)
+    end
+    
+    it "should have an id" do
+      @item.id.should == "1"
+    end
+    
+    it "should have a title" do
+      @item.title.should == "Hello"
+    end
+  end
 end
