@@ -458,4 +458,39 @@ describe "SAXMachine" do
       @collection.categories.first.collection.categories.first.title.should == "Second"
     end
   end
+  
+  describe "parsing a tree without a collection class" do
+    before do
+      @xml = %[
+      <categories>
+        <category id="1">
+          <title>First</title>
+          <categories>
+            <category id="2">
+              <title>Second</title>
+            </category>
+          </categories>
+        </category>
+      </categories>
+      ]
+      class CategoryTree
+        include SAXMachine
+        attr_accessor :id
+        element :category, :value => :id, :as => :id
+        element :title
+        elements :category, :as => :categories, :class => CategoryTree
+      end
+      @collection = CategoryTree.parse(@xml)
+    end
+    
+    it "should parse the first category" do
+      @collection.categories.first.id.should == "1"
+      @collection.categories.first.title.should == "First"
+    end
+    
+    it "should parse the nested category" do
+      @collection.categories.first.categories.first.id.should == "2"
+      @collection.categories.first.categories.first.title.should == "Second"
+    end
+  end
 end

@@ -5,7 +5,7 @@ module SAXMachine
     attr_reader :stack, :name
 
     def initialize(object)
-      @stack = [[object, object.class.sax_config]]
+      @stack = [[object, nil]]
       @parsed_configs = {}
     end
 
@@ -31,6 +31,7 @@ module SAXMachine
       end
       if sax_config && (element_configs = sax_config.element_configs_for_attribute(name, attrs)).any?
         parse_element_attributes(element_configs, object, attrs)
+
       end
       if sax_config && element_config = sax_config.element_config_for_tag(name, attrs)
         unless pushed
@@ -56,21 +57,6 @@ module SAXMachine
       stack.pop
     end
 
-    def characaters_captured?
-      !@value.nil? && !@value.empty?
-    end
-
-    def parsing_collection?
-      !@collection_handler.nil?
-    end
-
-    def parse_collection_instance_attributes
-      instance = @collection_handler.object
-      @attrs.each_with_index do |attr_name,index|
-        instance.send("#{attr_name}=", @attrs[index + 1]) if index % 2 == 0 && instance.methods.include?("#{attr_name}=")
-      end
-    end
-
     def parse_element_attributes(element_configs, object, attrs)
       element_configs.each do |ec|
         unless parsed_config?(object, ec)
@@ -80,33 +66,12 @@ module SAXMachine
       end
     end
 
-    def set_element_config_for_element_value
-      @value = ""
-      @element_config = sax_config.element_config_for_tag(@name, @attrs)
-    end
-
     def mark_as_parsed(object, element_config)
-      @parsed_configs[[object, element_config]] = true unless element_config.collection?
+      @parsed_configs[[object.object_id, element_config.object_id]] = true unless element_config.collection?
     end
 
     def parsed_config?(object, element_config)
-      @parsed_configs[[object, element_config]]
-    end
-
-    def reset_current_collection
-      @collection_handler = nil
-      @collection_config  = nil
-    end
-
-    def reset_current_tag
-      @name   = nil
-      @attrs  = nil
-      @value  = nil
-      @element_config = nil
-    end
-
-    def sax_config
-      @object.class.sax_config
+      @parsed_configs[[object.object_id, element_config.object_id]]
     end
   end
 end
