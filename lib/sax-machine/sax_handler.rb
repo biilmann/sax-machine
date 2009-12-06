@@ -2,7 +2,7 @@ require "nokogiri"
 
 module SAXMachine
   class SAXHandler < Nokogiri::XML::SAX::Document
-    attr_reader :stack, :name
+    attr_reader :stack
 
     def initialize(object)
       @stack = [[object, nil]]
@@ -28,6 +28,7 @@ module SAXMachine
         sax_config = object.class.sax_config
         stack.push [object, collection_config]
         pushed = true
+        
       end
       if sax_config && (element_configs = sax_config.element_configs_for_attribute(name, attrs)).any?
         parse_element_attributes(element_configs, object, attrs)
