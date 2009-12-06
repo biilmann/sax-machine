@@ -19,7 +19,7 @@ module SAXMachine
     end
 
     def start_element(name, attrs = [])
-      object, config, string = stack.last
+      object, config, value = stack.last
       sax_config = object.class.respond_to?(:sax_config) ? object.class.sax_config : nil
       pushed = false
 
@@ -28,39 +28,32 @@ module SAXMachine
         sax_config = object.class.sax_config
         stack.push [object, collection_config, ""]
         pushed = true
-        
       end
+
       if sax_config && (element_configs = sax_config.element_configs_for_attribute(name, attrs)).any?
         parse_element_attributes(element_configs, object, attrs)
-
       end
-      if sax_config && element_config = sax_config.element_config_for_tag(name, attrs)
-        unless pushed
-          stack.push [element_config.data_class ? element_config.data_class.new : object, element_config, ""]
-          pushed = true
-        end
+
+      if !pushed && sax_config && element_config = sax_config.element_config_for_tag(name, attrs)
+        stack.push [element_config.data_class ? element_config.data_class.new : object, element_config, ""]
+        pushed = true
       end
     end
 
     def end_element(name)
-      (object, tag_config, _), (element, config, value) = stack[-2..-1]      
-      if stack.size > 1 && config
-        if config.name.to_s == name.to_s
-          unless parsed_config?(object, config)
-            if config.respond_to?(:accessor)
-              object.send(config.accessor) << element
-            else
-              if config.data_class
-                object.send(config.setter, element)
-              else
-                object.send(config.setter, value) unless value == ""
-              end
-              mark_as_parsed(object, config)
-            end
-          end
-          stack.pop
+      (object, tag_config, _), (element, config, value) = stack[-2..-1]
+      return unless stack.size > 1 && config && config.name.to_s == name.to_s
+
+      unless parsed_config?(object, config)
+        if config.respond_to?(:accessor)
+          object.send(config.accessor) << element
+        else
+          value = config.data_class ? element : value
+          object.send(config.setter, value) unless value == ""
+          mark_as_parsed(object, config)
         end
       end
+      stack.pop
     end
 
     def parse_element_attributes(element_configs, object, attrs)
