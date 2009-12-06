@@ -418,4 +418,44 @@ describe "SAXMachine" do
       f.url.should == "http://www.pauldix.net/"
     end
   end
+  
+  describe "parsing a tree" do
+    before do
+      @xml = %[
+      <categories>
+        <category id="1">
+          <title>First</title>
+          <categories>
+            <category id="2">
+              <title>Second</title>
+            </category>
+          </categories>
+        </category>
+      </categories>
+      ]
+      class CategoryCollection; end
+      class Category
+        include SAXMachine
+        attr_accessor :id
+        element :category, :value => :id, :as => :id
+        element :title
+        element :categories, :as => :collection, :class => CategoryCollection
+      end
+      class CategoryCollection
+        include SAXMachine
+        elements :category, :as => :categories, :class => Category
+      end
+      @collection = CategoryCollection.parse(@xml)
+    end
+    
+    it "should parse the first category" do
+      @collection.categories.first.id.should == "1"
+      @collection.categories.first.title.should == "First"
+    end
+    
+    it "should parse the nested category" do
+      @collection.categories.first.collection.categories.first.id.should == "2"
+      @collection.categories.first.collection.categories.first.title.should == "Second"
+    end
+  end
 end
