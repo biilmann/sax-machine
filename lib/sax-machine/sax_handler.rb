@@ -2,19 +2,16 @@ require "nokogiri"
 
 module SAXMachine
   class SAXHandler < Nokogiri::XML::SAX::Document
-    attr_reader :object
+    attr_reader :stack, :name
 
     def initialize(object)
-      @object = object
+      @stack = [[object, object.class.sax_config]]
       @parsed_configs = {}
     end
 
     def characters(string)
-      if parsing_collection?
-        @collection_handler.characters(string)
-      elsif @element_config
-        @value << string
-      end
+      object, config = stack.last
+      object << string if object.kind_of?(String)
     end
 
     def cdata_block(string)
@@ -22,39 +19,41 @@ module SAXMachine
     end
 
     def start_element(name, attrs = [])
-      @name   = name
-      @attrs  = attrs
+      object, config = stack.last
+      sax_config = object.class.respond_to?(:sax_config) ? object.class.sax_config : nil
+      pushed = false
 
-      if parsing_collection?
-        @collection_handler.start_element(@name, @attrs)
-
-      elsif @collection_config = sax_config.collection_config(@name, @attrs)
-        @collection_handler = @collection_config.handler
-        @collection_handler.start_element(@name, @attrs)
-
-      elsif (element_configs = sax_config.element_configs_for_attribute(@name, @attrs)).any?
-        parse_element_attributes(element_configs)
-        set_element_config_for_element_value
-
-      else
-        set_element_config_for_element_value
+      if sax_config && collection_config = sax_config.collection_config(name, attrs)
+        object = collection_config.data_class.new
+        sax_config = object.class.sax_config
+        stack.push [object, collection_config]
+        pushed = true
       end
+      if sax_config && (element_configs = sax_config.element_configs_for_attribute(name, attrs)).any?
+        parse_element_attributes(element_configs, object, attrs)
+      end
+      if sax_config && element_config = sax_config.element_config_for_tag(name, attrs)
+        unless pushed
+          stack.push [element_config.data_class ? element_config.data_class.new : "", element_config]
+          pushed = true
+        end
+      end
+      stack.push [object, nil] unless pushed
     end
 
     def end_element(name)
-      if parsing_collection? && @collection_config.name == name
-        @object.send(@collection_config.accessor) << @collection_handler.object
-        reset_current_collection
-
-      elsif parsing_collection?
-        @collection_handler.end_element(name)
-
-      elsif characaters_captured? && !parsed_config?
-        mark_as_parsed
-        @object.send(@element_config.setter, @value)
+      (object, tag_config), (value, config) = stack[-2..-1]      
+      if stack.size > 1 && config
+        if config.name.to_s == name.to_s && !parsed_config?(object, config)
+          if config.respond_to?(:accessor)
+            object.send(config.accessor) << value
+          else     
+            object.send(config.setter, value) unless value == ""
+            mark_as_parsed(object, config)
+          end
+        end
       end
-
-      reset_current_tag
+      stack.pop
     end
 
     def characaters_captured?
@@ -72,14 +71,13 @@ module SAXMachine
       end
     end
 
-    def parse_element_attributes(element_configs)
+    def parse_element_attributes(element_configs, object, attrs)
       element_configs.each do |ec|
-        unless parsed_config?(ec)
-          @object.send(ec.setter, ec.value_from_attrs(@attrs))
-          mark_as_parsed(ec)
+        unless parsed_config?(object, ec)
+          object.send(ec.setter, ec.value_from_attrs(attrs))
+          mark_as_parsed(object, ec)
         end
       end
-      @element_config = nil
     end
 
     def set_element_config_for_element_value
@@ -87,14 +85,12 @@ module SAXMachine
       @element_config = sax_config.element_config_for_tag(@name, @attrs)
     end
 
-    def mark_as_parsed(element_config=nil)
-      element_config ||= @element_config
-      @parsed_configs[element_config] = true unless element_config.collection?
+    def mark_as_parsed(object, element_config)
+      @parsed_configs[[object, element_config]] = true unless element_config.collection?
     end
 
-    def parsed_config?(element_config=nil)
-      element_config ||= @element_config
-      @parsed_configs[element_config]
+    def parsed_config?(object, element_config)
+      @parsed_configs[[object, element_config]]
     end
 
     def reset_current_collection
